@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GIRC Metrics Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<style>
+  :root {
+    --blue: #0070d2; --blue-dark: #005fb2; --blue-light: #e8f4fd;
+    --green: #2e844a; --green-light: #eaf5ea;
+    --orange: #e07000; --orange-light: #fef4e5;
+    --red: #c23934; --red-light: #fce9e9;
+    --purple: #7526e3; --purple-light: #f3edff;
+    --gray: #514f4d; --gray-light: #f3f2f2; --border: #dddbda;
+    --white: #ffffff; --text: #1a1a1a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Salesforce Sans', -apple-system, BlinkMacSystemFont, sans-serif; background: #f3f2f2; color: var(--text); font-size: 14px; }
+
+  /* Header */
+  .header { background: linear-gradient(135deg, #032d60, #0070d2); color: white; padding: 20px 32px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+  .header-left h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+  .header-left p { font-size: 12px; opacity: 0.8; margin-top: 2px; }
+  .header-right { text-align: right; font-size: 12px; opacity: 0.85; }
+  .header-right strong { font-size: 14px; }
+
+  /* Summary cards */
+  .cards { display: flex; gap: 16px; padding: 24px 32px 0; flex-wrap: wrap; }
+  .card { background: white; border-radius: 8px; padding: 16px 20px; flex: 1; min-width: 160px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border-left: 4px solid var(--blue); }
+  .card.green { border-left-color: var(--green); }
+  .card.orange { border-left-color: var(--orange); }
+  .card.red { border-left-color: var(--red); }
+  .card.purple { border-left-color: var(--purple); }
+  .card-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--gray); font-weight: 600; }
+  .card-value { font-size: 28px; font-weight: 700; margin: 4px 0 2px; color: var(--text); }
+  .card-sub { font-size: 11px; color: var(--gray); }
+
+  /* Filters */
+  .filters { display: flex; gap: 12px; padding: 20px 32px 0; flex-wrap: wrap; align-items: flex-end; }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .filter-group label { font-size: 11px; font-weight: 600; color: var(--gray); text-transform: uppercase; letter-spacing: 0.4px; }
+  .filter-group select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; background: white; min-width: 150px; cursor: pointer; }
+  .filter-group select:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0,112,210,0.15); }
+  .btn-reset { padding: 7px 16px; background: white; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; cursor: pointer; color: var(--gray); align-self: flex-end; }
+  .btn-reset:hover { background: var(--gray-light); }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; padding: 20px 32px 0; border-bottom: 2px solid var(--border); margin: 0 0; }
+  .tab { padding: 10px 20px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--gray); border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.15s; white-space: nowrap; }
+  .tab:hover { color: var(--blue); }
+  .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+  /* Content panels */
+  .content { padding: 24px 32px; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Chart grid */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+  .chart-grid.single { grid-template-columns: 1fr; }
+  .chart-grid.triple { grid-template-columns: 1fr 1fr 1fr; }
+  @media (max-width: 1100px) { .chart-grid, .chart-grid.triple { grid-template-columns: 1fr; } }
+
+  .chart-card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+  .chart-card h3 { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .chart-card p.sub { font-size: 11px; color: var(--gray); margin-bottom: 16px; }
+  .chart-wrap { position: relative; height: 280px; }
+  .chart-wrap.tall { height: 380px; }
+
+  /* Table */
+  .data-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 16px; }
+  .data-table th { background: var(--gray-light); padding: 8px 12px; text-align: left; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--gray); border-bottom: 2px solid var(--border); }
+  .data-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .data-table tr:hover td { background: var(--blue-light); }
+  .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .data-table .bar-cell { width: 120px; }
+  .mini-bar { background: var(--blue); height: 8px; border-radius: 4px; display: inline-block; vertical-align: middle; }
+
+  /* Badge */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .badge.sev1 { background: var(--red-light); color: var(--red); }
+  .badge.sev2 { background: var(--orange-light); color: var(--orange); }
+  .badge.sev3 { background: var(--green-light); color: var(--green); }
+  .badge.q1 { background: #e8f4fd; color: var(--blue-dark); }
+  .badge.q2 { background: var(--purple-light); color: var(--purple); }
+  .badge.q3 { background: var(--orange-light); color: var(--orange); }
+
+  /* Section headers */
+  .section-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* Sparkline row for overview */
+  .overview-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 8px; margin-bottom: 20px; }
+  .month-tile { background: white; border-radius: 6px; padding: 10px 8px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.07); cursor: pointer; transition: transform 0.1s; border: 2px solid transparent; }
+  .month-tile:hover { transform: translateY(-2px); border-color: var(--blue); }
+  .month-tile.active { border-color: var(--blue); background: var(--blue-light); }
+  .month-tile .m-name { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--gray); }
+  .month-tile .m-val { font-size: 18px; font-weight: 800; color: var(--text); margin: 2px 0; }
+  .month-tile .m-q { font-size: 9px; font-weight: 600; }
+  .month-tile.q1c .m-q { color: var(--blue); }
+  .month-tile.q2c .m-q { color: var(--purple); }
+  .month-tile.q3c .m-q { color: var(--orange); }
+
+  .no-data { color: var(--gray); font-style: italic; font-size: 13px; padding: 20px; text-align: center; }
+  .hide-global-filters #globalFilters { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <h1>GIRC Metrics Dashboard</h1>
+    <p>BT-Network Reliability Center &nbsp;|&nbsp; Team: PF2GH7N</p>
+  </div>
+  <div class="header-right">
+    <div>Feb 2026 – Oct 20, 2026</div>
+    <strong>Total: 31,526 incidents</strong>
+  </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="cards">
+  <div class="card">
+    <div class="card-label">Total Incidents</div>
+    <div class="card-value">31,526</div>
+    <div class="card-sub">Feb 1 – Oct 20, 2026</div>
+  </div>
+  <div class="card green">
+    <div class="card-label">Q1 (Feb–Apr)</div>
+    <div class="card-value">10,964</div>
+    <div class="card-sub">Sev1: 1 &nbsp;|&nbsp; Sev2: 1 &nbsp;|&nbsp; Sev3: 49</div>
+  </div>
+  <div class="card purple" style="border-left-color:#7526e3">
+    <div class="card-label">Q2 (May–Jul)</div>
+    <div class="card-value">11,214</div>
+    <div class="card-sub">Sev1: 0 &nbsp;|&nbsp; Sev2: 2 &nbsp;|&nbsp; Sev3: 26</div>
+  </div>
+  <div class="card orange">
+    <div class="card-label">Q3 (Aug–Oct 20)</div>
+    <div class="card-value">9,348</div>
+    <div class="card-sub">Sev1: 1 &nbsp;|&nbsp; Sev2: 2 &nbsp;|&nbsp; Sev3: 38</div>
+  </div>
+  <div class="card red">
+    <div class="card-label">Top Service (All)</div>
+    <div class="card-value" style="font-size:16px;margin-top:6px;">Wireless</div>
+    <div class="card-sub">9,416 incidents across 9 months</div>
+  </div>
+  <div class="card" style="border-left-color:#2e844a">
+    <div class="card-label">Network Incidents</div>
+    <div class="card-value">141</div>
+    <div class="card-sub">All origins &nbsp;|&nbsp; 71.6% caught by monitoring (101)</div>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="filters" id="globalFilters">
+  <div class="filter-group">
+    <label>Quarter</label>
+    <select id="filterQuarter" onchange="applyFilters()">
+      <option value="all">All Quarters</option>
+      <option value="Q1">Q1 (Feb–Apr)</option>
+      <option value="Q2">Q2 (May–Jul)</option>
+      <option value="Q3">Q3 (Aug–Oct 20)</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label>Month</label>
+    <select id="filterMonth" onchange="applyFilters()">
+      <option value="all">All Months</option>
+      <option value="February">February</option>
+      <option value="March">March</option>
+      <option value="April">April</option>
+      <option value="May">May</option>
+      <option value="June">June</option>
+      <option value="July">July</option>
+      <option value="August">August</option>
+      <option value="September">September</option>
+      <option value="October">October (1–20)</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label>Service</label>
+    <select id="filterService" onchange="applyFilters()">
+      <option value="all">All Services</option>
+    </select>
+  </div>
+  <button class="btn-reset" onclick="resetFilters()">Reset Filters</button>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" onclick="showTab('overview')">Overview</div>
+  <div class="tab" onclick="showTab('trend')">Monthly Trend</div>
+  <div class="tab" onclick="showTab('services')">Service Breakdown</div>
+  <div class="tab" onclick="showTab('q1')">Q1 Detail</div>
+  <div class="tab" onclick="showTab('q2')">Q2 Detail</div>
+  <div class="tab" onclick="showTab('q3')">Q3 Detail</div>
+  <div class="tab" onclick="showTab('severity')">Network Incidents</div>
+</div>
+
+<div class="content">
+
+  <!-- OVERVIEW TAB -->
+  <div class="tab-panel active" id="tab-overview">
+    <div class="section-title">Monthly Incident Volume</div>
+    <div class="overview-grid" id="monthTiles"></div>
+
+    <div class="chart-grid">
+      <div class="chart-card">
+        <h3>Monthly Incidents — All Months</h3>
+        <p class="sub">Filtered view based on selected quarter/month</p>
+        <div class="chart-wrap"><canvas id="overviewBar"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Quarterly Distribution</h3>
+        <p class="sub">Total incidents by quarter</p>
+        <div class="chart-wrap"><canvas id="quarterDoughnut"></canvas></div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h3>Top 8 Services — All Months Combined</h3>
+      <p class="sub">Aggregate incident count per service</p>
+      <div class="chart-wrap tall"><canvas id="topServicesBar"></canvas></div>
+    </div>
+  </div>
+
+  <!-- MONTHLY TREND TAB -->
+  <div class="tab-panel" id="tab-trend">
+    <div class="chart-grid single">
+      <div class="chart-card">
+        <h3>Month-over-Month Incident Trend</h3>
+        <p class="sub">Feb 2026 – Oct 2026 (Oct = first 20 days)</p>
+        <div class="chart-wrap tall"><canvas id="trendLine"></canvas></div>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>Monthly Data Table</h3>
+      <table class="data-table" id="monthTable"></table>
+    </div>
+  </div>
+
+  <!-- SERVICES TAB -->
+  <div class="tab-panel" id="tab-services">
+    <div class="chart-grid">
+      <div class="chart-card">
+        <h3>Service Incidents by Month</h3>
+        <p class="sub">Stacked view — use month filter to drill down</p>
+        <div class="chart-wrap tall"><canvas id="serviceStacked"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Service Share (Filtered)</h3>
+        <p class="sub">Proportion of incidents by service</p>
+        <div class="chart-wrap tall"><canvas id="servicePie"></canvas></div>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>Service Detail Table</h3>
+      <table class="data-table" id="serviceTable"></table>
+    </div>
+  </div>
+
+  <!-- Q1 DETAIL TAB -->
+  <div class="tab-panel" id="tab-q1">
+    <div class="chart-grid triple">
+      <div class="chart-card">
+        <h3>February</h3><p class="sub">3,591 incidents</p>
+        <div class="chart-wrap"><canvas id="q1Feb"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>March</h3><p class="sub">4,724 incidents</p>
+        <div class="chart-wrap"><canvas id="q1Mar"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>April</h3><p class="sub">2,649 incidents</p>
+        <div class="chart-wrap"><canvas id="q1Apr"></canvas></div>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>Q1 Service Comparison (Feb vs Mar vs Apr)</h3>
+      <div class="chart-wrap tall"><canvas id="q1Compare"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Q2 DETAIL TAB -->
+  <div class="tab-panel" id="tab-q2">
+    <div class="chart-grid triple">
+      <div class="chart-card">
+        <h3>May</h3><p class="sub">3,366 incidents</p>
+        <div class="chart-wrap"><canvas id="q2May"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>June</h3><p class="sub">3,348 incidents</p>
+        <div class="chart-wrap"><canvas id="q2Jun"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>July</h3><p class="sub">4,500 incidents</p>
+        <div class="chart-wrap"><canvas id="q2Jul"></canvas></div>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>Q2 Service Comparison (May vs Jun vs Jul)</h3>
+      <div class="chart-wrap tall"><canvas id="q2Compare"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Q3 DETAIL TAB -->
+  <div class="tab-panel" id="tab-q3">
+    <div class="chart-grid triple">
+      <div class="chart-card">
+        <h3>August</h3><p class="sub">3,828 incidents</p>
+        <div class="chart-wrap"><canvas id="q3Aug"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>September</h3><p class="sub">3,756 incidents</p>
+        <div class="chart-wrap"><canvas id="q3Sep"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>October (1–20)</h3><p class="sub">1,764 incidents</p>
+        <div class="chart-wrap"><canvas id="q3Oct"></canvas></div>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>Q3 Service Comparison (Aug vs Sep vs Oct)</h3>
+      <div class="chart-wrap tall"><canvas id="q3Compare"></canvas></div>
+    </div>
+  </div>
+
+  <!-- NETWORK INCIDENTS TAB -->
+  <div class="tab-panel" id="tab-severity">
+    <!-- Filters at top of Network Incidents tab -->
+    <div style="background:white;border-radius:8px;padding:14px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:20px;">
+      <div class="filters" style="padding:0;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+        <div class="filter-group">
+          <label>Search</label>
+          <input type="text" id="incSearch" placeholder="Incident # or subject..." style="padding:7px 10px;border:1px solid #dddbda;border-radius:4px;font-size:13px;min-width:220px;">
+        </div>
+        <div class="filter-group">
+          <label>Quarter</label>
+          <select id="incQuarter" onchange="renderIncTable()">
+            <option value="">All Quarters</option>
+            <option value="Q1">Q1 (Feb – Apr)</option>
+            <option value="Q2">Q2 (May – Jul)</option>
+            <option value="Q3">Q3 (Aug – Oct)</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Month</label>
+          <select id="incMonth" onchange="renderIncTable()">
+            <option value="">All Months</option>
+            <option>February</option><option>March</option><option>April</option>
+            <option>May</option><option>June</option><option>July</option>
+            <option>August</option><option>September</option><option>October</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Severity</label>
+          <select id="incSev" onchange="renderIncTable()">
+            <option value="">All Severities</option>
+            <option value="1">Sev 1 — Critical</option>
+            <option value="2">Sev 2 — High</option>
+            <option value="3">Sev 3 — Medium</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Status</label>
+          <select id="incStatus" onchange="renderIncTable()">
+            <option value="">All Statuses</option>
+            <option value="open">Open (In Progress)</option>
+            <option value="resolved">Resolved</option>
+            <option value="closed">Closed</option>
+            <option value="not_valid">Closed - Not Valid</option>
+            <option value="duplicate">Closed - Duplicate</option>
+            <option value="retro">Closed - Retro</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Service Manager</label>
+          <select id="incMgr" onchange="renderIncTable()">
+            <option value="">All Managers</option>
+            <option>Alan Lam</option>
+            <option>Cathleen O'Neill</option>
+            <option>Chintan Chheda</option>
+            <option>Ciaran Jay</option>
+            <option>David Conway</option>
+            <option>Greg Jensen</option>
+            <option>Jackie Lau</option>
+            <option>Ravi Patel</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>&nbsp;</label>
+          <button class="btn-reset" onclick="resetIncFilters()">Reset</button>
+        </div>
+        <div class="filter-group" style="margin-left:auto;justify-content:flex-end;">
+          <label>&nbsp;</label>
+          <span id="incCount" style="font-size:12px;color:#514f4d;padding:7px 0;"></span>
+        </div>
+      </div>
+    </div>
+    <div class="cards" style="padding:0 0 20px;">
+      <div class="card red">
+        <div class="card-label">Total Network Incidents</div>
+        <div class="card-value">141</div>
+        <div class="card-sub">All origins &nbsp;|&nbsp; Feb 1 – Oct 20, 2026</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Sev 1</div>
+        <div class="card-value">3</div>
+        <div class="card-sub">Critical — all origins</div>
+      </div>
+      <div class="card orange">
+        <div class="card-label">Sev 2</div>
+        <div class="card-value">9</div>
+        <div class="card-sub">High — all origins</div>
+      </div>
+      <div class="card green">
+        <div class="card-label">Sev 3</div>
+        <div class="card-value">129</div>
+        <div class="card-sub">Medium — all origins</div>
+      </div>
+      <div class="card" style="border-left-color:#06a59a;">
+        <div class="card-label">Caught by Monitoring</div>
+        <div class="card-value" style="color:#06a59a;">71.6%</div>
+        <div class="card-sub">101 of 141 &nbsp;|&nbsp; Sev1: 1, Sev2: 5, Sev3: 95</div>
+      </div>
+      <div class="card" style="border-left-color:#f4bc25;">
+        <div class="card-label">Caught by Customer</div>
+        <div class="card-value" style="color:#c07d00;">28.4%</div>
+        <div class="card-sub">40 of 141 &nbsp;|&nbsp; Sev1: 2, Sev2: 3, Sev3: 35</div>
+      </div>
+    </div>
+
+    <div class="chart-grid triple">
+      <div class="chart-card">
+        <h3>Network Incidents by Quarter &amp; Severity</h3>
+        <p class="sub">All origins — quarterly count broken down by severity</p>
+        <div class="chart-wrap"><canvas id="sevBar"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Severity Distribution (All Origins)</h3>
+        <p class="sub">Feb – Oct 20, 2026 &nbsp;|&nbsp; Sev1: 3, Sev2: 9, Sev3: 129</p>
+        <div class="chart-wrap"><canvas id="sevPie"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Incident Origin Breakdown</h3>
+        <p class="sub">How incidents were detected — monitoring vs. customer internal</p>
+        <div class="chart-wrap"><canvas id="originPie"></canvas></div>
+      </div>
+    </div>
+
+    <div class="chart-card" style="margin-top:20px;">
+      <h3>Network Incidents — Quarterly Summary</h3>
+      <p class="sub" style="margin-bottom:16px;">Source: Quarterly Count – Network Incidents sheet &nbsp;|&nbsp; All origins (Feb 2026 – Oct 20, 2026)</p>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Quarter</th><th>Period</th>
+            <th class="num"><span class="badge sev1">Sev 1</span></th>
+            <th class="num"><span class="badge sev2">Sev 2</span></th>
+            <th class="num"><span class="badge sev3">Sev 3</span></th>
+            <th class="num">Total</th>
+            <th class="num" style="color:#06a59a;">By Monitoring</th>
+            <th class="num" style="color:#06a59a;">% Monitoring</th>
+            <th class="num" style="color:#c07d00;">By Customer</th>
+            <th class="num" style="color:#c07d00;">% Customer</th>
+            <th>Breakdown</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge q1">Q1</span></td>
+            <td>Feb – Apr 2026</td>
+            <td class="num">1</td><td class="num">1</td><td class="num">57</td>
+            <td class="num"><strong>59</strong></td>
+            <td class="num" style="color:#514f4d;">—</td><td class="num" style="color:#514f4d;">—</td>
+            <td class="num" style="color:#514f4d;">—</td><td class="num" style="color:#514f4d;">—</td>
+            <td><div class="mini-bar" style="width:59px;background:#0070d2;display:inline-block"></div></td>
+          </tr>
+          <tr>
+            <td><span class="badge q2">Q2</span></td>
+            <td>May – Jul 2026</td>
+            <td class="num">1</td><td class="num">2</td><td class="num">30</td>
+            <td class="num"><strong>33</strong></td>
+            <td class="num" style="color:#514f4d;">—</td><td class="num" style="color:#514f4d;">—</td>
+            <td class="num" style="color:#514f4d;">—</td><td class="num" style="color:#514f4d;">—</td>
+            <td><div class="mini-bar" style="width:33px;background:#7526e3;display:inline-block"></div></td>
+          </tr>
+          <tr>
+            <td><span class="badge q3">Q3</span></td>
+            <td>Aug – Oct 20, 2026</td>
+            <td class="num">1</td><td class="num">6</td><td class="num">42</td>
+            <td class="num"><strong>49</strong></td>
+            <td class="num" style="color:#514f4d;">—</td><td class="num" style="color:#514f4d;">—</td>
+            <td class="num" style="color:#514f4d;">—</td><td class="num" style="color:#514f4d;">—</td>
+            <td><div class="mini-bar" style="width:49px;background:#e07000;display:inline-block"></div></td>
+          </tr>
+          <tr style="background:#f9f9f9;font-weight:700;">
+            <td colspan="2"><strong>Total (Feb – Oct 20, 2026)</strong></td>
+            <td class="num"><strong>3</strong></td><td class="num"><strong>9</strong></td><td class="num"><strong>129</strong></td>
+            <td class="num"><strong>141</strong></td>
+            <td class="num" style="color:#06a59a;"><strong>101</strong></td>
+            <td class="num" style="color:#06a59a;"><strong>71.6%</strong></td>
+            <td class="num" style="color:#c07d00;"><strong>40</strong></td>
+            <td class="num" style="color:#c07d00;"><strong>28.4%</strong></td>
+            <td><div class="mini-bar" style="width:141px;background:#0070d2;display:inline-block"></div></td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="font-size:11px;color:#514f4d;margin-top:10px;">* Per-quarter origin breakdown not available from source. Overall: 101 of 141 caught by monitoring (71.6%), 40 of 141 by customer internal (28.4%). No overlap between channels.</p>
+    </div>
+
+    <!-- Detailed Incidents Table -->
+    <div class="chart-card" style="margin-top:20px;">
+      <h3>All Network Incidents — Detail View</h3>
+      <p class="sub" style="margin-bottom:16px;">Source: Network Inc - Data sheet &nbsp;|&nbsp; Monitoring-caught incidents, Feb 2026 – Oct 20, 2026</p>
+      <div style="overflow-x:auto;">
+        <table class="data-table" id="incTable">
+          <thead>
+            <tr>
+              <th style="width:130px;">Incident #</th>
+              <th style="width:90px;">Date</th>
+              <th>Subject</th>
+              <th style="width:70px;">Severity</th>
+              <th style="width:130px;">Status</th>
+              <th style="width:150px;">Service Manager</th>
+            </tr>
+          </thead>
+          <tbody id="incTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /content -->
+
+<script>
+Chart.register(ChartDataLabels);
+
+// ============================================================
+// DATA
+// ============================================================
+const MONTHS = ['February','March','April','May','June','July','August','September','October'];
+const MONTH_TOTALS = {
+  February: 3591, March: 4724, April: 2649,
+  May: 3366, June: 3348, July: 4500,
+  August: 3828, September: 3756, October: 1764
+};
+const QUARTER_MAP = {
+  February:'Q1',March:'Q1',April:'Q1',
+  May:'Q2',June:'Q2',July:'Q2',
+  August:'Q3',September:'Q3',October:'Q3'
+};
+const QUARTER_COLORS = { Q1:'#0070d2', Q2:'#7526e3', Q3:'#e07000' };
+
+const SERVICE_DATA = {
+  February: {'DET-Network - Wireless':1173,'DET-Network - SDWAN':1026,'DET-Zscaler Private Access (ZPA)':565,'DET-Network - Backbone and Internet Egress':187,'DET-Network - UPS':184,'DET-Network - Firewall':120,'DET-Network - LAN':95,'DET-LiveAction':57,'DET-DNS Services':47,'DET-Office Terminal Switches':45,'DET-Network - Datacenters':45,'DET-Network - Virtual Private Networking':11,'DET-Network - Load Balancing':11,'DET-DHCP Service':6,'DET-Infoblox NetMRI':5,'BT-Network-CloudNetworking-Services':5,'DET-Network - Network Access Control':4,'BT-Networks-Offices':3,'DET-Network - Packet Brokering':1,'BT-Networks-Wireless':1},
+  March: {'DET-Network - Wireless':2187,'DET-Network - SDWAN':1149,'DET-Zscaler Private Access (ZPA)':423,'DET-Network - Backbone and Internet Egress':195,'DET-Network - LAN':154,'DET-Network - UPS':144,'DET-Office Terminal Switches':107,'DET-Infoblox NetMRI':87,'DET-New Relic - Network Monitoring':62,'DET-DNS Services':57,'DET-Network - Load Balancing':43,'DET-DHCP Service':26,'DET-LiveAction':23,'DET-Network - Firewall':20,'DET-Network - Datacenters':16,'DET-Network - Virtual Private Networking':11,'BT-Network-CloudNetworking-Services':10,'BT-Networks-Wireless':5,'DET-Network - Network Access Control':5},
+  April: {'DET-Network - SDWAN':690,'DET-Zscaler Private Access (ZPA)':556,'DET-Network - Wireless':425,'DET-Network - UPS':184,'DET-Network - Backbone and Internet Egress':171,'DET-Network - LAN':95,'DET-New Relic - Network Monitoring':87,'DET-Network - Datacenters':83,'DET-Network - Load Balancing':66,'DET-Network - Network Access Control':59,'DET-Network - Firewall':56,'DET-Office Terminal Switches':49,'DET-Infoblox NetMRI':39,'DET-Network - Virtual Private Networking':26,'DET-LiveAction':24,'DET-DHCP Service':19,'DET-DNS Services':14,'BT-Network-CloudNetworking-Services':6},
+  May: {'DET-Network - Wireless':1472,'DET-Network - SDWAN':603,'DET-Zscaler Private Access (ZPA)':364,'DET-Network - Backbone and Internet Egress':244,'DET-Network - LAN':125,'DET-Network - UPS':114,'DET-New Relic - Network Monitoring':102,'DET-Infoblox NetMRI':95,'DET-Office Terminal Switches':51,'DET-Network - Firewall':42,'DET-Network - Load Balancing':39,'DET-Network - Datacenters':35,'DET-LiveAction':31,'DET-Network - Virtual Private Networking':20,'DET-Network - Network Access Control':11,'DET-DNS Services':10,'DET-DHCP Service':4,'BT-Network-CloudNetworking-Services':4},
+  June: {'DET-Network - Wireless':1299,'DET-Network - SDWAN':708,'DET-Zscaler Private Access (ZPA)':447,'DET-Network - LAN':227,'DET-Network - UPS':173,'DET-Network - Backbone and Internet Egress':134,'DET-Network - Network Access Control':93,'DET-Office Terminal Switches':66,'DET-Network - Firewall':43,'DET-New Relic - Network Monitoring':42,'DET-Infoblox NetMRI':34,'DET-Network - Load Balancing':24,'DET-LiveAction':19,'DET-Network - Virtual Private Networking':13,'DET-Network - Datacenters':12,'DET-DNS Services':9,'DET-Network - Packet Brokering':4,'BT-Network-CloudNetworking-Services':1},
+  July: {'DET-Network - Wireless':1964,'DET-Network - SDWAN':773,'DET-Zscaler Private Access (ZPA)':453,'DET-Network - Backbone and Internet Egress':434,'DET-Network - LAN':184,'DET-Network - UPS':169,'DET-Network - Network Access Control':97,'DET-DNS Services':87,'DET-Office Terminal Switches':65,'DET-ZScaler Digital Experience - ZDX':63,'DET-Network - Datacenters':56,'DET-Network - Virtual Private Networking':31,'DET-Infoblox NetMRI':30,'DET-Network - Load Balancing':30,'DET-Network - Firewall':28,'DET-Zscaler Internet Access - ZIA':26,'DET-LiveAction':6,'BT-Network-CloudNetworking-Services':4},
+  August: {'DET-Network - UPS':920,'DET-Network - SDWAN':883,'DET-Network - Wireless':697,'DET-Zscaler Private Access (ZPA)':408,'DET-Network - Backbone and Internet Egress':249,'DET-ZScaler Digital Experience - ZDX':123,'DET-Infoblox NetMRI':96,'DET-Network - LAN':95,'DET-Network - Datacenters':87,'DET-Office Terminal Switches':69,'DET-DNS Services':51,'DET-Network - Virtual Private Networking':35,'DET-Network - Network Access Control':35,'DET-Network - Firewall':27,'DET-Network - Load Balancing':21,'DET-Zscaler Internet Access - ZIA':18,'DET-DHCP Service':12,'DET-LiveAction':1,'BT-Network-CloudNetworking-Services':1},
+  September: {'DET-Network - SDWAN':1212,'DET-Network - UPS':730,'DET-Network - Backbone and Internet Egress':712,'DET-Zscaler Private Access (ZPA)':307,'DET-Network - Wireless':231,'DET-ZScaler Digital Experience - ZDX':207,'DET-New Relic - Network Monitoring':93,'DET-Network - LAN':88,'DET-Office Terminal Switches':52,'DET-Infoblox NetMRI':24,'DET-Network - Virtual Private Networking':22,'DET-Network - Load Balancing':22,'DET-Network - Datacenters':18,'DET-Network - Network Access Control':12,'DET-DNS Services':11,'DET-DHCP Service':6,'DET-Network - Firewall':4,'BT-Network-CloudNetworking-Services':2,'DET-LiveAction':1,'DET-Network - Guest Wireless':1,'UPS-Ecostruxure-Dev':1},
+  October: {'DET-Network - SDWAN':506,'DET-Network - Wireless':300,'DET-Network - Backbone and Internet Egress':207,'DET-Network - UPS':162,'DET-Office Terminal Switches':114,'UPS-Ecostruxure-Dev':106,'DET-ZScaler Digital Experience - ZDX':103,'DET-Network - LAN':98,'DET-New Relic - Network Monitoring':64,'DET-Network - Datacenters':25,'DET-Network - Virtual Private Networking':19,'DET-Infoblox NetMRI':18,'DET-DNS Services':15,'DET-Network - Load Balancing':10,'DET-Network - Network Access Control':8,'DET-Zscaler Internet Access - ZIA':3,'DET-Zscaler Private Access (ZPA)':3,'DET-DHCP Service':2,'DET-Network - Firewall':1}
+};
+
+const SEVERITY_DATA = {
+  Q1: {Sev1:1, Sev2:1, Sev3:57, total:59},
+  Q2: {Sev1:1, Sev2:2, Sev3:30, total:33},
+  Q3: {Sev1:1, Sev2:6, Sev3:42, total:49}
+};
+
+const INCIDENTS_DATA = [
+  {id:'INC-000001850',date:'10/20/2026',subject:'Lumen Circuit Down at New York (NYC3)',sev:'3',status:'In Progress',manager:"Cathleen O'Neill",month:'October',quarter:'Q3'},
+  {id:'INC-000001849',date:'10/20/2026',subject:'Lumen P2P circuit down between Ashburn (ASH) and New York (NYC3) DC',sev:'3',status:'In Progress',manager:'Chintan Chheda',month:'October',quarter:'Q3'},
+  {id:'INC-000001847',date:'10/19/2026',subject:'Agentforce Voice Performance Issues',sev:'1',status:'Resolved',manager:'David Conway',month:'October',quarter:'Q3'},
+  {id:'INC-000001843',date:'10/16/2026',subject:'Network monitoring is failing from BOM1 & BTW1 regions',sev:'3',status:'Resolved',manager:'Alan Lam',month:'October',quarter:'Q3'},
+  {id:'INC-000001840',date:'10/15/2026',subject:'Zayo Circuit down at GRU1 (San Paulo, Brazil)',sev:'3',status:'Resolved',manager:"Cathleen O'Neill",month:'October',quarter:'Q3'},
+  {id:'INC-000001834',date:'10/14/2026',subject:'Website and Application Access Issue Korea ICN1',sev:'3',status:'Resolved',manager:"Cathleen O'Neill",month:'October',quarter:'Q3'},
+  {id:'INC-000001829',date:'10/12/2026',subject:'TLV2 Bynet circuit down',sev:'3',status:'Resolved',manager:"Cathleen O'Neill",month:'October',quarter:'Q3'},
+  {id:'INC-000001828',date:'10/11/2026',subject:'Lumen DIA circuit is down at AKL1 site (Auckland)',sev:'3',status:'Resolved',manager:"Cathleen O'Neill",month:'October',quarter:'Q3'},
+  {id:'INC-000001826',date:'10/10/2026',subject:'Airtel circuit down at HYD2 (Hyderabad, B3)',sev:'3',status:'Resolved',manager:"Cathleen O'Neill",month:'October',quarter:'Q3'},
+  {id:'INC-000001824',date:'10/9/2026',subject:'Floor 1 circuit breaker tripped, UPS power alerts at London (Lon5)',sev:'3',status:'Resolved',manager:'Greg Jensen',month:'October',quarter:'Q3'},
+  {id:'INC-000001820',date:'10/8/2026',subject:'APs down at TLV3',sev:'3',status:'Resolved',manager:"Cathleen O'Neill",month:'October',quarter:'Q3'},
+  {id:'INC-000001819',date:'10/7/2026',subject:'Power failure and UPS on battery at LON5-1-UPS1 – 1st floor',sev:'3',status:'Resolved',manager:'Greg Jensen',month:'October',quarter:'Q3'},
+  {id:'INC-000001804',date:'10/2/2026',subject:'AT&T Circuit down at MEX1 (Mexico City)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'October',quarter:'Q3'},
+  {id:'INC-000001799',date:'9/30/2026',subject:'Zayo DIA circuit down at Sao Paolo (GRU1)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001798',date:'9/30/2026',subject:'Zayo DIA circuit down at Indianapolis (IND4)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001793',date:'9/28/2026',subject:'Lumen Circuit is Down at GRU1, San Paulo',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001789',date:'9/25/2026',subject:'Unable to login to btw-nwbas-wp002 and btw-nwbas-wp001',sev:'3',status:'Closed - Not Valid',manager:'Chintan Chheda',month:'September',quarter:'Q3'},
+  {id:'INC-000001786',date:'9/24/2026',subject:'Sydney Office Power Issues',sev:'2',status:'Closed',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001785',date:'9/24/2026',subject:'Zayo circuit down at NYC3',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001772',date:'9/19/2026',subject:'NTT Circuit down at site MEL1 (Melbourne)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001768',date:'9/18/2026',subject:'Zayo circuit is down at site DCA1 (Washington D.C.)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001767',date:'9/18/2026',subject:'Lumen circuit down at site MEX1 (Mexico City)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001765',date:'9/17/2026',subject:'TATA Circuit Down at DEL1',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001745',date:'9/14/2026',subject:'BOS1 Verizon circuit down',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001734',date:'9/8/2026',subject:'Lumen Circuit Down at SEA7',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001733',date:'9/7/2026',subject:'DIA circuit down at Yigal Alon, Tel Aviv (TLV2)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001729',date:'9/7/2026',subject:'Network - LAN Issue (Paris)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001720',date:'9/4/2026',subject:'McLean Office power outage (IAD6)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001708',date:'9/1/2026',subject:'Lumen circuit will be down during rerouting work at AUS1',sev:'3',status:'Closed - Not Valid',manager:"Cathleen O'Neill",month:'September',quarter:'Q3'},
+  {id:'INC-000001707',date:'9/1/2026',subject:'GoMobile Performance Issues (Hyderabad)',sev:'2',status:'Closed',manager:'Ciaran Jay',month:'September',quarter:'Q3'},
+  {id:'INC-000001696',date:'8/27/2026',subject:'APs down at Munich MUC2 office',sev:'3',status:'Closed - Not Valid',manager:'Ciaran Jay',month:'August',quarter:'Q3'},
+  {id:'INC-000001693',date:'8/25/2026',subject:'Zayo circuit down at site SFO3',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'August',quarter:'Q3'},
+  {id:'INC-000001673',date:'8/18/2026',subject:'Circuit down at PAO3',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'August',quarter:'Q3'},
+  {id:'INC-000001661',date:'8/14/2026',subject:'Multiple APs on HYD1 Floor 15 experiencing CAPWAP disconnects',sev:'2',status:'Closed - Duplicate',manager:'Ciaran Jay',month:'August',quarter:'Q3'},
+  {id:'INC-000001654',date:'8/10/2026',subject:'Lumen Circuit down at AUS1 (Austin, TX)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'August',quarter:'Q3'},
+  {id:'INC-000001653',date:'8/10/2026',subject:'Hyderabad Office Network Issues (HYD1 – 15th floor)',sev:'2',status:'Closed',manager:'Ciaran Jay',month:'August',quarter:'Q3'},
+  {id:'INC-000001643',date:'8/6/2026',subject:'Circuit down at ERF1 site',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'August',quarter:'Q3'},
+  {id:'INC-000001641',date:'8/5/2026',subject:'BLR office WLC switchover',sev:'3',status:'Closed',manager:'Ciaran Jay',month:'August',quarter:'Q3'},
+  {id:'INC-000001640',date:'8/5/2026',subject:'Circuit down at EZE1 – Buenos Aires, Argentina',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'August',quarter:'Q3'},
+  {id:'INC-000001638',date:'8/5/2026',subject:'Colt DIA circuit is down at Jena, Germany (ERF1)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'August',quarter:'Q3'},
+  {id:'INC-000001637',date:'8/4/2026',subject:'Zayo circuit down at New York (NYC3)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'August',quarter:'Q3'},
+  {id:'INC-000001633',date:'8/2/2026',subject:'Lumen Circuit is Down at AUS1 (Austin)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'August',quarter:'Q3'},
+  {id:'INC-000001615',date:'7/28/2026',subject:'Circuit at SEA7 site is currently down',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'July',quarter:'Q2'},
+  {id:'INC-000001613',date:'7/27/2026',subject:'Lumen DIA circuit is down – McLean, Virginia (IAD6)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'July',quarter:'Q2'},
+  {id:'INC-000001611',date:'7/26/2026',subject:'HYD1 B4, 15th floor Power supply issue on network switches',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'July',quarter:'Q2'},
+  {id:'INC-000001574',date:'7/13/2026',subject:'Buenos Aires Office Network Disruption',sev:'2',status:'Closed - Retro',manager:"Cathleen O'Neill",month:'July',quarter:'Q2'},
+  {id:'INC-000001565',date:'7/9/2026',subject:'Multiple Sites impacted – PAR1, DUB3, SFO8 (AP flaps)',sev:'3',status:'Closed',manager:'Ravi Patel',month:'July',quarter:'Q2'},
+  {id:'INC-000001551',date:'6/29/2026',subject:'Lumen P2P link down between NYC3 and Ashburn (ASH)',sev:'3',status:'Closed',manager:'Chintan Chheda',month:'June',quarter:'Q2'},
+  {id:'INC-000001550',date:'6/26/2026',subject:'User from India slow access to lightning.com / force.com',sev:'3',status:'Closed',manager:'Chintan Chheda',month:'June',quarter:'Q2'},
+  {id:'INC-000001544',date:'6/23/2026',subject:'MUC2 Vodafone circuit down',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'June',quarter:'Q2'},
+  {id:'INC-000001517',date:'6/12/2026',subject:'Melbourne (MEL1) - NTT DIA circuit down',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'June',quarter:'Q2'},
+  {id:'INC-000001515',date:'6/12/2026',subject:'Sydney Data Centre Alert',sev:'3',status:'Closed - Not Valid',manager:'Alan Lam',month:'June',quarter:'Q2'},
+  {id:'INC-000001513',date:'6/11/2026',subject:'Melbourne (MEL1) - NTT DIA circuit down (repeat)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'June',quarter:'Q2'},
+  {id:'INC-000001510',date:'6/10/2026',subject:'fra3-dmz-b – 1/34 internet link down (EUNetworks)',sev:'3',status:'Closed',manager:'Chintan Chheda',month:'June',quarter:'Q2'},
+  {id:'INC-000001509',date:'6/10/2026',subject:'HYD1 Module 10 Hardware issue',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'June',quarter:'Q2'},
+  {id:'INC-000001506',date:'6/9/2026',subject:'Dallas site – dfw2-br-sdwan-002 offline',sev:'3',status:'Closed - Not Valid',manager:"Cathleen O'Neill",month:'June',quarter:'Q2'},
+  {id:'INC-000001492',date:'6/2/2026',subject:'Comcast DIA Circuit down at Bellevue (SEA1)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'June',quarter:'Q2'},
+  {id:'INC-000001480',date:'5/28/2026',subject:'Zayo Circuit (368260) down at ATL1 site (Atlanta)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'May',quarter:'Q2'},
+  {id:'INC-000001472',date:'5/25/2026',subject:'Melbourne Office Power Issues',sev:'2',status:'Closed',manager:'Greg Jensen',month:'May',quarter:'Q2'},
+  {id:'INC-000001460',date:'5/20/2026',subject:'ISE Node Down – syd1-ips-b (disk corruption)',sev:'3',status:'Closed',manager:'Ravi Patel',month:'May',quarter:'Q2'},
+  {id:'INC-000001444',date:'5/15/2026',subject:'Zscaler App Connector Performance Issues',sev:'3',status:'Closed',manager:'Ravi Patel',month:'May',quarter:'Q2'},
+  {id:'INC-000001431',date:'5/12/2026',subject:'Zscaler Digital Experience (ZDX) Outage',sev:'3',status:'Closed',manager:'Chintan Chheda',month:'May',quarter:'Q2'},
+  {id:'INC-000001403',date:'4/25/2026',subject:'TATA Circuit is down at BRU1 site (Brussels)',sev:'3',status:'Closed - Not Valid',manager:"Cathleen O'Neill",month:'April',quarter:'Q1'},
+  {id:'INC-000001400',date:'4/24/2026',subject:'Atlanta Circuit Issue (Lumen down at ATL1)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'April',quarter:'Q1'},
+  {id:'INC-000001396',date:'4/23/2026',subject:'TCL Circuit down at BOM1',sev:'3',status:'Closed',manager:'Chintan Chheda',month:'April',quarter:'Q1'},
+  {id:'INC-000001390',date:'4/22/2026',subject:'Colt Circuit is down at ERF1 site (Jena, Germany)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'April',quarter:'Q1'},
+  {id:'INC-000001389',date:'4/20/2026',subject:'Chicago (CHI8) Audio Visual Issues',sev:'3',status:'Closed',manager:'Jackie Lau',month:'April',quarter:'Q1'},
+  {id:'INC-000001384',date:'4/19/2026',subject:'ByNet circuit is down at TLV2 site',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'April',quarter:'Q1'},
+  {id:'INC-000001374',date:'4/16/2026',subject:'Multiple firewalls reported 100% packet loss (Virginia MCNS)',sev:'3',status:'Closed - Not Valid',manager:'Ravi Patel',month:'April',quarter:'Q1'},
+  {id:'INC-000001373',date:'4/15/2026',subject:'Telstra circuit is down at SHM1',sev:'3',status:'Closed - Not Valid',manager:"Cathleen O'Neill",month:'April',quarter:'Q1'},
+  {id:'INC-000001369',date:'4/14/2026',subject:'Tableau Database Network Performance Issue',sev:'3',status:'Closed - Retro',manager:'Ravi Patel',month:'April',quarter:'Q1'},
+  {id:'INC-000001363',date:'4/11/2026',subject:'Security Cameras flapping on 3rd floor at DXB1',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'April',quarter:'Q1'},
+  {id:'INC-000001342',date:'4/1/2026',subject:'Dublin Office Network Disruption',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'April',quarter:'Q1'},
+  {id:'INC-000001337',date:'3/30/2026',subject:'IAD7 ZAYO circuit down',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001335',date:'3/30/2026',subject:'SHM1 TELSTRA circuit down',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001328',date:'3/27/2026',subject:'MEL1 NTT data circuit disruption',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001324',date:'3/23/2026',subject:'Zayo circuit disruption (VAC2 to Google/Zoom)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001314',date:'3/17/2026',subject:'NYC3 Zayo circuit disruption',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001309',date:'3/14/2026',subject:'Austin Network Issues (AUS1 – Google Meet)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001304',date:'3/13/2026',subject:'Tata circuit down at Amsterdam office (AMS4)',sev:'3',status:'Closed - Not Valid',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001301',date:'3/12/2026',subject:'DIA circuit Lumen is down at SEA6 site',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001299',date:'3/12/2026',subject:'Zayo DIA Circuit is down at ATL1 site (Atlanta)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001293',date:'3/10/2026',subject:'PCCW Circuit down at TOK5 (Tokyo)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001285',date:'3/6/2026',subject:'New York Network Performance Issues',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001283',date:'3/5/2026',subject:'P2P link between ASH & SEA3 DC is down',sev:'3',status:'Closed',manager:'Chintan Chheda',month:'March',quarter:'Q1'},
+  {id:'INC-000001281',date:'3/4/2026',subject:'Telstra Circuit Down at MEL1',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001280',date:'3/4/2026',subject:'TATA Circuit down at BRU1 site (Brussels)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001279',date:'3/4/2026',subject:'London Office Power Issues (110 Bishopsgate)',sev:'3',status:'Closed',manager:'Greg Jensen',month:'March',quarter:'Q1'},
+  {id:'INC-000001276',date:'3/3/2026',subject:'NTT circuit (313726) down at MEL1 site',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001272',date:'3/2/2026',subject:'EU Networks circuit down at DUB3 site (Dublin)',sev:'3',status:'Closed',manager:'Greg Jensen',month:'March',quarter:'Q1'},
+  {id:'INC-000001271',date:'3/1/2026',subject:'Zayo circuit (265368) down at PAO3 site',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'March',quarter:'Q1'},
+  {id:'INC-000001265',date:'2/27/2026',subject:'Airtel circuit down at DEL1 site (Gurugram, India)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'February',quarter:'Q1'},
+  {id:'INC-000001256',date:'2/25/2026',subject:'TATA circuit down at CBR1 site (Canberra)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'February',quarter:'Q1'},
+  {id:'INC-000001244',date:'2/18/2026',subject:'P2P link between ASH & SEA3 DC is down',sev:'3',status:'Closed',manager:'Chintan Chheda',month:'February',quarter:'Q1'},
+  {id:'INC-000001243',date:'2/18/2026',subject:'TCL circuit is down at BLR1 site',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'February',quarter:'Q1'},
+  {id:'INC-000001226',date:'2/8/2026',subject:'Colt circuit is down at HEL1 site (Helsinki)',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'February',quarter:'Q1'},
+  {id:'INC-000001223',date:'2/6/2026',subject:'ASH to SEA3 Network Circuit Issue',sev:'3',status:'Closed',manager:'Chintan Chheda',month:'February',quarter:'Q1'},
+  {id:'INC-000001222',date:'2/6/2026',subject:'AUS1 site experiencing unstable network connectivity',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'February',quarter:'Q1'},
+  {id:'INC-000001219',date:'2/5/2026',subject:'Lumen Circuit down at SEA6',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'February',quarter:'Q1'},
+  {id:'INC-000001218',date:'2/5/2026',subject:'P2P link between ASH & SEA3 DC is down',sev:'3',status:'Closed',manager:'Chintan Chheda',month:'February',quarter:'Q1'},
+  {id:'INC-000001217',date:'2/5/2026',subject:'Standby wireless controller device is unreachable at AKL1',sev:'3',status:'Closed',manager:'Ciaran Jay',month:'February',quarter:'Q1'},
+  {id:'INC-000001205',date:'2/1/2026',subject:'Bynet circuit down at TLV2 site',sev:'3',status:'Closed',manager:"Cathleen O'Neill",month:'February',quarter:'Q1'}
+];
+
+function resetIncFilters() {
+  document.getElementById('incSearch').value = '';
+  document.getElementById('incQuarter').value = '';
+  document.getElementById('incMonth').value = '';
+  document.getElementById('incSev').value = '';
+  document.getElementById('incStatus').value = '';
+  document.getElementById('incMgr').value = '';
+  renderIncTable();
+}
+function getStatusClass(s) {
+  if (s==='In Progress') return 'background:#e8f4fd;color:#0070d2;';
+  if (s==='Resolved') return 'background:#eaf5ea;color:#2e844a;';
+  if (s==='Closed') return 'background:#f3f2f2;color:#514f4d;';
+  return 'background:#fef4e5;color:#e07000;';
+}
+const STATUS_MAP = {
+  open: s => s === 'In Progress',
+  resolved: s => s === 'Resolved',
+  closed: s => s === 'Closed',
+  not_valid: s => s === 'Closed - Not Valid',
+  duplicate: s => s === 'Closed - Duplicate',
+  retro: s => s === 'Closed - Retro'
+};
+function renderIncTable() {
+  const search  = (document.getElementById('incSearch').value||'').toLowerCase();
+  const quarter = document.getElementById('incQuarter').value;
+  const month   = document.getElementById('incMonth').value;
+  const sev     = document.getElementById('incSev').value;
+  const status  = document.getElementById('incStatus').value;
+  const mgr     = document.getElementById('incMgr').value;
+  const filtered = INCIDENTS_DATA.filter(r => {
+    if (search  && !r.id.toLowerCase().includes(search) && !r.subject.toLowerCase().includes(search)) return false;
+    if (quarter && r.quarter !== quarter) return false;
+    if (month   && r.month !== month) return false;
+    if (sev     && r.sev !== sev) return false;
+    if (status  && !STATUS_MAP[status]?.(r.status)) return false;
+    if (mgr     && r.manager !== mgr) return false;
+    return true;
+  });
+  document.getElementById('incCount').textContent = filtered.length + ' of ' + INCIDENTS_DATA.length + ' incidents';
+  const tbody = document.getElementById('incTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = filtered.map(r => {
+    const sc = r.sev==='1' ? 'sev1' : r.sev==='2' ? 'sev2' : 'sev3';
+    const stStyle = getStatusClass(r.status);
+    return `<tr>
+      <td><span style="font-family:monospace;font-size:11px;">${r.id}</span></td>
+      <td style="white-space:nowrap;font-size:12px;">${r.date}</td>
+      <td>${r.subject}</td>
+      <td><span class="badge ${sc}">Sev ${r.sev}</span></td>
+      <td><span style="padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;${stStyle}">${r.status}</span></td>
+      <td>${r.manager}</td>
+    </tr>`;
+  }).join('');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const si = document.getElementById('incSearch');
+  if (si) si.addEventListener('input', renderIncTable);
+  renderIncTable();
+});
+
+// Palette
+const PALETTE = ['#0070d2','#7526e3','#e07000','#2e844a','#c23934','#06a59a','#f4bc25','#0b827c','#e2a1ff','#a9c7ff','#f5b223','#57d9a3','#ff6b6b','#4bcadb','#adb7c9','#f48fb1','#80cbc4','#ffcc02','#9575cd','#4db6ac'];
+
+// Collect all service names
+const ALL_SERVICES = [...new Set(MONTHS.flatMap(m => Object.keys(SERVICE_DATA[m] || {})))].sort();
+
+// ============================================================
+// STATE & FILTERING
+// ============================================================
+let activeTab = 'overview';
+let charts = {};
+
+function getFilteredMonths() {
+  const q = document.getElementById('filterQuarter').value;
+  const m = document.getElementById('filterMonth').value;
+  let months = MONTHS;
+  if (q !== 'all') months = months.filter(mo => QUARTER_MAP[mo] === q);
+  if (m !== 'all') {
+    const label = m === 'October' ? 'October' : m;
+    months = months.filter(mo => mo === label);
+  }
+  return months;
+}
+
+function getFilteredServices(months) {
+  const s = document.getElementById('filterService').value;
+  const svcSet = new Set(months.flatMap(m => Object.keys(SERVICE_DATA[m] || {})));
+  let svcs = [...svcSet].sort();
+  if (s !== 'all') svcs = svcs.filter(sv => sv === s);
+  return svcs;
+}
+
+function getAggregatedServiceData(months, services) {
+  const result = {};
+  for (const svc of services) {
+    result[svc] = months.reduce((sum, m) => sum + (SERVICE_DATA[m]?.[svc] || 0), 0);
+  }
+  return result;
+}
+
+function applyFilters() {
+  renderAll();
+}
+
+function resetFilters() {
+  document.getElementById('filterQuarter').value = 'all';
+  document.getElementById('filterMonth').value = 'all';
+  document.getElementById('filterService').value = 'all';
+  renderAll();
+}
+
+// ============================================================
+// TAB SWITCHING
+// ============================================================
+function showTab(id) {
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    const ids = ['overview','trend','services','q1','q2','q3','severity'];
+    t.classList.toggle('active', ids[i] === id);
+  });
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  activeTab = id;
+  document.body.classList.toggle('hide-global-filters', id === 'severity');
+  renderAll();
+  if (id === 'severity') renderIncTable();
+}
+
+// ============================================================
+// CHART HELPERS
+// ============================================================
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+function mkBar(id, labels, datasets, opts={}) {
+  destroyChart(id);
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  const stacked = opts.stacked || false;
+  charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: opts.legend ?? false, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+        datalabels: {
+          anchor: stacked ? 'center' : 'end',
+          align: stacked ? 'center' : 'top',
+          formatter: v => v === 0 ? null : (v >= 1000 ? (v/1000).toFixed(1)+'k' : v),
+          font: { size: 10, weight: '600' },
+          color: stacked ? '#fff' : '#1a1a1a',
+          display: ctx => ctx.dataset.data[ctx.dataIndex] > 0
+        }
+      },
+      scales: {
+        x: { stacked, grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { stacked, grid: { color: '#f0f0f0' }, ticks: { font: { size: 11 } } }
+      },
+      ...opts.extra
+    }
+  });
+}
+
+function mkLine(id, labels, datasets) {
+  destroyChart(id);
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  charts[id] = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        datalabels: {
+          anchor: 'end', align: 'top',
+          formatter: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v,
+          font: { size: 10, weight: '600' },
+          color: '#0070d2'
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { grid: { color: '#f0f0f0' }, ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+function mkDoughnut(id, labels, data, colors) {
+  destroyChart(id);
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  charts[id] = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } } }
+    }
+  });
+}
+
+function mkHBar(id, labels, data, colors) {
+  destroyChart(id);
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ data, backgroundColor: colors || PALETTE, borderRadius: 3 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        datalabels: {
+          anchor: 'end', align: 'right',
+          formatter: v => v === 0 ? null : (v >= 1000 ? (v/1000).toFixed(1)+'k' : v),
+          font: { size: 10, weight: '600' },
+          color: '#1a1a1a'
+        }
+      },
+      scales: {
+        x: { grid: { color: '#f0f0f0' }, ticks: { font: { size: 10 } } },
+        y: { grid: { display: false }, ticks: { font: { size: 10 } } }
+      },
+      layout: { padding: { right: 36 } }
+    }
+  });
+}
+
+// ============================================================
+// RENDER FUNCTIONS
+// ============================================================
+function renderMonthTiles() {
+  const container = document.getElementById('monthTiles');
+  if (!container) return;
+  const filteredMonths = getFilteredMonths();
+  container.innerHTML = MONTHS.map(m => {
+    const q = QUARTER_MAP[m];
+    const active = filteredMonths.includes(m) ? 'active' : '';
+    const qClass = q === 'Q1' ? 'q1c' : q === 'Q2' ? 'q2c' : 'q3c';
+    return `<div class="month-tile ${active} ${qClass}" onclick="selectMonth('${m}')">
+      <div class="m-name">${m.slice(0,3)}</div>
+      <div class="m-val">${(MONTH_TOTALS[m]/1000).toFixed(1)}k</div>
+      <div class="m-q">${q}</div>
+    </div>`;
+  }).join('');
+}
+
+function selectMonth(m) {
+  document.getElementById('filterMonth').value = m;
+  applyFilters();
+}
+
+function renderOverview() {
+  renderMonthTiles();
+  const months = getFilteredMonths();
+  const colors = months.map(m => QUARTER_COLORS[QUARTER_MAP[m]] + 'cc');
+
+  // Bar chart
+  mkBar('overviewBar',
+    months.map(m => m.slice(0,3)),
+    [{ data: months.map(m => MONTH_TOTALS[m]), backgroundColor: colors, borderRadius: 4 }]
+  );
+
+  // Quarterly doughnut
+  const qTotals = { Q1: 10964, Q2: 11214, Q3: 9348 };
+  mkDoughnut('quarterDoughnut',
+    ['Q1 (Feb–Apr)','Q2 (May–Jul)','Q3 (Aug–Oct 20)'],
+    Object.values(qTotals),
+    ['#0070d2','#7526e3','#e07000']
+  );
+
+  // Top services overall
+  const allSvc = getAggregatedServiceData(months, getFilteredServices(months));
+  const sorted = Object.entries(allSvc).sort((a,b) => b[1]-a[1]).slice(0,10);
+  mkHBar('topServicesBar', sorted.map(x=>x[0].replace('DET-','').replace('BT-','')), sorted.map(x=>x[1]), PALETTE);
+}
+
+function renderTrend() {
+  const months = getFilteredMonths();
+  const vals = months.map(m => MONTH_TOTALS[m]);
+  const colors = months.map(m => QUARTER_COLORS[QUARTER_MAP[m]]);
+
+  mkLine('trendLine', months.map(m => m.slice(0,3)), [{
+    label: 'Incidents',
+    data: vals,
+    borderColor: '#0070d2',
+    backgroundColor: 'rgba(0,112,210,0.1)',
+    fill: true,
+    tension: 0.3,
+    pointBackgroundColor: colors,
+    pointRadius: 6,
+    pointHoverRadius: 8,
+    borderWidth: 2
+  }]);
+
+  // Table
+  const tbody = document.getElementById('monthTable');
+  if (!tbody) return;
+  const max = Math.max(...vals);
+  tbody.innerHTML = `<thead><tr><th>Month</th><th>Quarter</th><th class="num">Incidents</th><th class="num">% of Total</th><th>Volume</th></tr></thead><tbody>` +
+    months.map((m,i) => {
+      const pct = ((vals[i]/31526)*100).toFixed(1);
+      const bw = Math.round((vals[i]/max)*100);
+      return `<tr><td><strong>${m}</strong></td><td><span class="badge ${QUARTER_MAP[m].toLowerCase()}">${QUARTER_MAP[m]}</span></td><td class="num">${vals[i].toLocaleString()}</td><td class="num">${pct}%</td><td class="bar-cell"><div class="mini-bar" style="width:${bw}px"></div></td></tr>`;
+    }).join('') + `</tbody>`;
+}
+
+function renderServices() {
+  const months = getFilteredMonths();
+  const services = getFilteredServices(months);
+  const topSvcs = [...services].sort((a,b) => {
+    const ta = months.reduce((s,m)=>s+(SERVICE_DATA[m]?.[a]||0),0);
+    const tb = months.reduce((s,m)=>s+(SERVICE_DATA[m]?.[b]||0),0);
+    return tb-ta;
+  }).slice(0,12);
+
+  // Stacked bar
+  mkBar('serviceStacked', months.map(m=>m.slice(0,3)),
+    topSvcs.map((svc,i) => ({
+      label: svc.replace('DET-','').replace('BT-',''),
+      data: months.map(m => SERVICE_DATA[m]?.[svc]||0),
+      backgroundColor: PALETTE[i % PALETTE.length]
+    })),
+    { stacked: true, legend: true }
+  );
+
+  // Pie
+  const svcTotals = topSvcs.map(s => months.reduce((sum,m)=>sum+(SERVICE_DATA[m]?.[s]||0),0));
+  mkDoughnut('servicePie', topSvcs.map(s=>s.replace('DET-','').replace('BT-','')), svcTotals, PALETTE);
+
+  // Table
+  const allSvc = getAggregatedServiceData(months, services);
+  const sorted = Object.entries(allSvc).sort((a,b)=>b[1]-a[1]);
+  const maxVal = sorted[0]?.[1] || 1;
+  const tbl = document.getElementById('serviceTable');
+  if (!tbl) return;
+  tbl.innerHTML = `<thead><tr><th>Service</th><th class="num">Total</th>${months.map(m=>`<th class="num">${m.slice(0,3)}</th>`).join('')}<th>Bar</th></tr></thead><tbody>` +
+    sorted.map(([svc,tot]) => {
+      const cells = months.map(m => `<td class="num">${(SERVICE_DATA[m]?.[svc]||0).toLocaleString()}</td>`).join('');
+      const bw = Math.round((tot/maxVal)*100);
+      return `<tr><td>${svc}</td><td class="num"><strong>${tot.toLocaleString()}</strong></td>${cells}<td class="bar-cell"><div class="mini-bar" style="width:${bw}px"></div></td></tr>`;
+    }).join('') + `</tbody>`;
+}
+
+function renderMonthPie(canvasId, month) {
+  const data = SERVICE_DATA[month];
+  const sorted = Object.entries(data).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  mkDoughnut(canvasId, sorted.map(x=>x[0].replace('DET-','').replace('BT-','')), sorted.map(x=>x[1]), PALETTE);
+}
+
+function renderQCompare(canvasId, months) {
+  const allSvcs = [...new Set(months.flatMap(m=>Object.keys(SERVICE_DATA[m]||{})))];
+  const top = allSvcs.sort((a,b)=>{
+    const ta=months.reduce((s,m)=>s+(SERVICE_DATA[m]?.[a]||0),0);
+    const tb=months.reduce((s,m)=>s+(SERVICE_DATA[m]?.[b]||0),0);
+    return tb-ta;
+  }).slice(0,8);
+  mkBar(canvasId, top.map(s=>s.replace('DET-','').replace('BT-','')),
+    months.map((m,i)=>({ label:m, data:top.map(s=>SERVICE_DATA[m]?.[s]||0), backgroundColor:PALETTE[i*3]+'cc', borderRadius:3 })),
+    { legend: true }
+  );
+}
+
+function renderQ1() {
+  renderMonthPie('q1Feb','February');
+  renderMonthPie('q1Mar','March');
+  renderMonthPie('q1Apr','April');
+  renderQCompare('q1Compare',['February','March','April']);
+}
+
+function renderQ2() {
+  renderMonthPie('q2May','May');
+  renderMonthPie('q2Jun','June');
+  renderMonthPie('q2Jul','July');
+  renderQCompare('q2Compare',['May','June','July']);
+}
+
+function renderQ3() {
+  renderMonthPie('q3Aug','August');
+  renderMonthPie('q3Sep','September');
+  renderMonthPie('q3Oct','October');
+  renderQCompare('q3Compare',['August','September','October']);
+}
+
+function renderSeverity() {
+  const qs = ['Q1','Q2','Q3'];
+  mkBar('sevBar', ['Q1 (Feb–Apr)','Q2 (May–Jul)','Q3 (Aug–Oct 20)'],
+    [
+      { label:'Sev 1 — Critical', data:qs.map(q=>SEVERITY_DATA[q].Sev1), backgroundColor:'#c23934', borderRadius:3 },
+      { label:'Sev 2 — High',     data:qs.map(q=>SEVERITY_DATA[q].Sev2), backgroundColor:'#e07000', borderRadius:3 },
+      { label:'Sev 3 — Medium',   data:qs.map(q=>SEVERITY_DATA[q].Sev3), backgroundColor:'#2e844a', borderRadius:3 }
+    ],
+    { stacked: true, legend: true }
+  );
+  mkDoughnut('sevPie',
+    ['Sev 1 — Critical (3)','Sev 2 — High (9)','Sev 3 — Medium (129)'],
+    [3, 9, 129],
+    ['#c23934','#e07000','#2e844a']
+  );
+  mkDoughnut('originPie',
+    ['Monitoring (101)','Customer (40)'],
+    [101, 40],
+    ['#06a59a','#f4bc25']
+  );
+}
+
+// ============================================================
+// POPULATE SERVICE FILTER
+// ============================================================
+function populateServiceFilter() {
+  const sel = document.getElementById('filterService');
+  ALL_SERVICES.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s; opt.textContent = s;
+    sel.appendChild(opt);
+  });
+}
+
+// ============================================================
+// RENDER ALL
+// ============================================================
+function renderAll() {
+  renderMonthTiles();
+  if (activeTab === 'overview') renderOverview();
+  else if (activeTab === 'trend') renderTrend();
+  else if (activeTab === 'services') renderServices();
+  else if (activeTab === 'q1') renderQ1();
+  else if (activeTab === 'q2') renderQ2();
+  else if (activeTab === 'q3') renderQ3();
+  else if (activeTab === 'severity') renderSeverity();
+}
+
+// ============================================================
+// INIT
+// ============================================================
+populateServiceFilter();
+document.body.classList.toggle('hide-global-filters', activeTab === 'severity');
+renderAll();
+</script>
+</body>
+</html>
